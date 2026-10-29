@@ -1,0 +1,120 @@
+name: Publicar Estatuto LGBTQIAPN+
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Baixar a fonte única
+        uses: actions/checkout@v4
+        with:
+          repository: rennanmetsi-gif/data2commsfinal
+          ref: main
+
+      - name: Montar pacote do domínio estatutolgbtqia.com.br
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+          cp -R estatutolgbtiqia/. _site/
+          touch _site/.nojekyll
+          printf 'estatutolgbtqia.com.br\n' > _site/CNAME
+
+          # Ajustar canonical, Open Graph, Twitter Cards, Schema.org JSON-LD e sitemap para o domínio oficial
+          python3 - <<'PY'
+          for path in ("_site/index.html", "_site/sitemap.xml"):
+              with open(path, "r", encoding="utf-8") as f:
+                  content = f.read()
+              content = content.replace(
+                  "https://acervolula.com.br/estatutolgbtiqia/",
+                  "https://estatutolgbtqia.com.br/"
+              )
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+
+          # Evitar indexação isolada do shell interno do PDF.js
+          viewer_path = "_site/pdfviewer/web/viewer.html"
+          with open(viewer_path, "r", encoding="utf-8") as f:
+              vhtml = f.read()
+          if 'name="robots"' not in vhtml:
+              vhtml = vhtml.replace("<head>", '<head>\n    <meta name="robots" content="noindex, nofollow">', 1)
+              with open(viewer_path, "w", encoding="utf-8") as f:
+                  f.write(vhtml)
+          PY
+
+          cat > _site/robots.txt <<'EOF'
+          # Leitores de prévia de links do Instagram, Facebook, Messenger, WhatsApp e X/Twitter
+          User-agent: facebookexternalhit
+          Allow: /
+
+          User-agent: Facebot
+          Allow: /
+
+          User-agent: meta-externalagent
+          Allow: /
+
+          User-agent: Meta-ExternalFetcher
+          Allow: /
+
+          User-agent: Twitterbot
+          Allow: /
+
+          User-agent: WhatsApp
+          Allow: /
+
+          User-agent: *
+          Allow: /
+          Sitemap: https://estatutolgbtqia.com.br/sitemap.xml
+          EOF
+
+          # Redirecionamentos amigáveis caso alguém acesse subcaminhos antigos no novo domínio
+          for sub in estatutolgbtiqia estatutolgbtqia; do
+            mkdir -p "_site/${sub}"
+            cat > "_site/${sub}/index.html" <<'EOF'
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="refresh" content="0; url=/">
+            <meta name="robots" content="noindex, follow">
+            <link rel="canonical" href="https://estatutolgbtqia.com.br/">
+            <script>window.location.replace("/" + window.location.search + window.location.hash);</script>
+            <title>Redirecionando — Estatuto Nacional dos Direitos LGBTQIAPN+</title>
+          </head>
+          <body>
+            <p>Redirecionando para <a href="/">estatutolgbtqia.com.br</a>...</p>
+          </body>
+          </html>
+          EOF
+          done
+
+      - name: Preparar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Enviar artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4
